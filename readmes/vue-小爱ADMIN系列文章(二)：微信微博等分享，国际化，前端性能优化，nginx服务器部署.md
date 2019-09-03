@@ -1,0 +1,684 @@
+最近在做我的小爱ADMIN后台管理系统，结合当前市场后台管理系统对相关功能的需求，我又开始新增了一些新的功能和组件，如分享功能组件，项目国际化功能；项目完成后，部署在nginx服务器，发现首次访问的速度特别慢，严重的影响了用户体验，因此，我又开始进行了一系列的前端性能优化;以及将优化后的项目部署到nginx服务器二级子目录的注意细节。
+
+- [效果演示地址](http://www.jiouai.com/permission/)
+- [github地址](https://github.com/wdlhao/vue2-element-touzi-admin/tree/dev-permission)
+
+# 分享功能
+
+## 背景说明
+
+用微信，微博等做网站的第三方登录及用微信和支付宝进行支付，都需要注册开发者账号和添加网站应用，比较麻烦。另外，注册的信息如果在前端页面里面进行公开，缺乏安全性。第三方分享功能不需要注册开发者账号和添加网站应用，用户信息相对保密，使用方法也相对简单。
+
+## 前端ui呈现和分享渠道
+
+封装了8个常用的分享组件，包含仿简书网站的底部和侧栏分享组件、仿掘金网站分享组件、仿新浪网站分享组件和其他一些网站横向排列的分享组件。包含的分享渠道有：**微信、微博、qq、qq空间、豆瓣**等。
+
+## 分享组件的封装和分享方法的集合
+
+分享效果如图：
+
+![](https://user-gold-cdn.xitu.io/2019/8/27/16cd0b6711d1ff5c?w=1920&h=943&f=png&s=98709)
+
+分享组件的封装：[share/index.vue](https://github.com/wdlhao/vue2-element-touzi-admin/blob/dev-permission/src/page/share/index.vue)
+
+```
+<template>
+  	<div class="shareContainer" ref="shareContainer">
+		<el-row :gutter="20">
+			<el-col :span="6">
+			  <heng-share @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></heng-share>
+			</el-col>
+			<el-col :span="6">
+			   <invite-share @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></invite-share>
+			</el-col>
+			<el-col :span="6">
+			  <jianshu-share @shareToWeixin="shareToWeixin" @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></jianshu-share>
+			</el-col>
+			<el-col :span="6">
+			  <jianshu-left-share @shareToWeixin="shareToWeixin" @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></jianshu-left-share>
+			</el-col>
+		</el-row>
+		<el-row :gutter="20">
+			<el-col :span="6">
+		       <info-share @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></info-share>
+			</el-col>
+			<el-col :span="6">
+			  <juejin-share @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></juejin-share>
+			</el-col>
+			<el-col :span="6">
+		      <sina-share @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></sina-share>
+			</el-col>
+			<el-col :span="6">
+		      <yan-share @shareToQQ="shareToQQ" @shareToQQzone="shareToQQzone" @shareToWeibo="shareToWeibo" @shareToDouban="shareToDouban"></yan-share>
+			</el-col>
+		</el-row>
+		<wx-code-modal v-if="wxModal.show" :wxModal="wxModal" @hideWxCodeModal="hideWxCodeModal"></wx-code-modal>
+  	</div>
+</template>
+```
+
+分享方法的集合:[ utils/share.js](https://github.com/wdlhao/vue2-element-touzi-admin/blob/dev-permission/src/utils/share.js)
+
+```
+import { weibo,qq,qqZone,douban,shareUrl,shareTitle } from "@/utils/env";
+import * as mutils from "@/utils/mUtils";
+
+function getParamsUrl(obj){
+    let paramsUrl = '';
+    for(let key in obj){
+        paramsUrl += key+'='+obj[key]+'&'
+    }
+    return paramsUrl;
+}
+
+export function shareConfig(type,obj){
+    let baseUrl = '';
+    if(mutils.isEmpty(obj)){
+        obj = {};
+    }
+    switch(type){
+        case 'weibo':
+            const weiboData = {
+                'url':shareUrl, // 内容链接，默认当前页面location
+                'title':shareTitle, // 可选参数, 默认当前页title
+                'pic':obj.pic || weibo.pic, // 分享图片的路径(可选)，多张图片通过"||"分开。
+                'count':'y', /**是否显示分享数，y|n(可选)*/
+                'searchPic':true // 是否要自动抓取页面上的图片。true|falsetrue:自动抓取,false:不自动抓取。
+            }
+            baseUrl = weibo.weiboUrl+'?appkey='+weibo.weiboAppkey+getParamsUrl(weiboData);
+            window.open(baseUrl,'_blank');
+            break;
+        case 'qq':
+            const qqData = {
+                'url':shareUrl,
+                'title':shareTitle,
+                'pics':obj.pic || qq.pic,  //QZone接口暂不支持发送多张图片的能力，若传入多张图片，则会自动选入第一张图片作为预览图。
+                'source':obj.source || qq.source, // 分享来源
+                'desc':obj.desc || qq.desc, 
+                'summary':obj.summary || qq.summary,
+            }
+            baseUrl = qq.baseUrl+'?'+getParamsUrl(qqData)
+            window.open(baseUrl,'_blank');
+            break;
+        case 'qqZone':
+            const qqZoneData = {
+                'url':shareUrl,
+                'title':shareTitle,
+                'pics':obj.pic || (qqZone.pic).split(','), 
+                'sharesource':obj.sharesource || qqZone.sharesource, // 分享来源
+                'desc':obj.desc || qqZone.desc, 
+                'summary':obj.summary || qqZone.summary,
+            }
+            baseUrl = qqZone.baseUrl+'?'+getParamsUrl(qqZoneData)
+            window.open(baseUrl,'_blank');
+            break;
+        case 'douban':
+            const doubanData = {
+                'href':shareUrl,
+                'name':shareTitle,
+                'image':obj.pic || douban.pic,
+            }
+            baseUrl = douban.baseUrl+'?'+getParamsUrl(doubanData)
+            window.open(baseUrl,'_blank');
+            break;
+    }
+}
+```
+微博分享后的效果,如图：
+<div align="left">
+    <img width = "400" height = "300" src="https://user-gold-cdn.xitu.io/2019/8/27/16cd0c2393116dc8?w=782&h=557&f=png&s=65550" />
+</div>
+
+qq分享后的效果,如图：
+
+<div align="left">
+    <img width = "400" height = "300" src="https://user-gold-cdn.xitu.io/2019/8/27/16cd0c4d3b28e303?w=934&h=671&f=png&s=112244" />
+</div>
+
+
+# Vue项目实现国际化(i18n)
+
+## 背景说明
+
+由于本项目需要多语言的支持，我们需要做国际化。我们使用 vue-i18n 来实现多语言的界面。
+
+## 使用步骤
+
+### 1.安装vue-i18n
+```
+npm install vue-i18n --save
+```
+关于语言包，我们有几种方式:一种是每个语言包一个独立的js放到项目里;或者将语言的对照写在 .vue 文件里， 或者加载远程的JSON语言包
+我们的后台界面需要支持的语言通常不多，更新也不会非常的频繁，所以我们将语言包放在项目里，规划项目目录，增加 lang 目录来存放语言对照。
+
+### 2.新建lang文件夹,用于存储语言包并导出
+
+中文语言包配置：src/lang/zh.js
+
+```
+const zh = {
+    // layout
+    commons: {
+      xiaoai: '小爱',
+      admin: '管理员',
+      editor: '赵晓编',
+      quit: '退出',
+      hi: '您好',
+      index: '首页',
+      userManage: '用户管理',
+      share: '分享功能',
+      infoManage: '信息管理',
+      infoShow: '个人信息',
+      infoShow1: '个人信息子菜单1',
+      infoShow2: '个人信息子菜单2',
+      infoShow3: '个人信息子菜单3',
+      infoShow4: '个人信息子菜单4',
+      infoShow5: '个人信息子菜单5',
+      infoModify: '修改信息',
+      infoModify1:'修改信息子菜单1',
+      infoModify2:'修改信息子菜单2',
+      infoModify3:'修改信息子菜单3',
+      fundManage: '资金管理',
+      fundList: '资金流水',
+      chinaTabsList: '区域投资',
+      fundData: '资金数据',
+      fundPosition: '投资分布',
+      typePosition: '项目分布',
+      incomePayPosition: '收支分布',
+      permission: '权限设置',
+      pagePer: '页面权限',
+      directivePer: '按钮权限',
+      errorPage: '错误页面',
+      page401:'401',
+      page404:'404',
+      wechatNumber: '微信号'
+    },
+    index:{
+      yearLoss:'年度总盈亏',
+      yearProfit:'年度收益率',
+      potentialInvestor:'潜在投资人',
+      intentionInvestor:'意向投资人',
+      waitExamineInvestor:'待审投资人',
+      examiningInvestor:'审核中投资人',
+      tenMillion:'千万元',
+      person:'人'
+    }
+  }
+  
+export default zh;
+```
+
+英文语言包配置：src/lang/en.js
+
+```
+const zh = {
+    // layout
+    commons: {
+      xiaoai: 'Ai.',
+      admin: 'Admin',
+      editor: 'Editor',
+      quit: 'Sign Out',
+      hi: 'Hi',
+      index: 'Dashboard',
+      userManage: 'Users',
+      share: 'Share',
+      infoManage: 'Infos',
+      infoShow: 'InfoShow',
+      infoShow1: 'InfoShow1',
+      infoShow2: 'InfoShow2',
+      infoShow3: 'InfoShow3',
+      infoShow4: 'InfoShow4',
+      infoShow5: 'InfoShow5',
+      infoModify: 'InfoModify',
+      infoModify1:'InfoModify1',
+      infoModify2:'InfoModify2',
+      infoModify3:'InfoModify3',
+      fundManage: 'Money',
+      fundList: 'MoneyList',
+      chinaTabsList: 'AreaList',
+      fundData: 'FundData',
+      fundPosition: 'FundPosition',
+      typePosition: 'TypePosition',
+      incomePayPosition: 'IncomePayPosition',
+      permission: 'Permission',
+      pagePer: 'PagePermission',
+      directivePer: 'DirectivePermission',
+      errorPage: 'ErrorPage',
+      page401:'401',
+      page404:'404',
+      wechatNumber: 'wechat'
+    },
+    index:{
+      yearLoss:'Year Loss',
+      yearProfit:'Year Profit',
+      potentialInvestor:'Potential Investor',
+      intentionInvestor:'Intention Investor',
+      waitExamineInvestor:'Wait Examine Investor',
+      examiningInvestor:'Examining Investor',
+      tenMillion:'Ten Million',
+      person:'P'
+    }
+  }
+  
+export default zh;
+```
+
+导出配置：src/lang/index.js
+
+```
+// 引入i18n国际化插件
+import { getToken} from '@/utils/auth'
+import Vue from 'vue'
+import VueI18n from 'vue-i18n'
+process.env.NODE_ENV === "development" ? Vue.use(VueI18n) : null;
+
+import enLocale from './en'
+import zhLocale from './zh'
+ 
+// 注册i18n实例并引入语言文件，文件格式等下解析
+const i18n = new VueI18n({
+  locale: getToken('lang') || 'en',
+  messages: {
+    zh: {
+      ...zhLocale
+    },
+    en: {
+      ...enLocale
+    },
+  }
+});
+
+export default i18n;
+```
+**注意：** locale: getToken('lang') || 'en',主要用来存储已经点击过的语言项，以便在项目刷新的时候，还能够拿到cookie中存储的语言类别。
+
+### 3.在项目入口文件main.js中引入i18n
+```
+// i18n国际化
+import i18n from "@/lang";
+new Vue({
+  router,
+  store,
+  i18n,  // 便于可以直接在组件中通过this.$i18n使用，也可以按需引用
+  render: h => h(App),
+}).$mount('#app')
+```
+
+### 4.页面组件中使用方法$t()
+
+```
+<div class='welcome'>
+    <span class="name">{{$t('commons.hi')}},</span>
+    <span class='name avatarname'> {{ $t(`commons.${name}`)}}</span>
+</div>
+```
+**注意**：$t('commons.hi'),这是直接导入的方法;$t(`commons.${name}`),这是导入变量的方法。
+
+### 5.点击切换语言方法
+
+效果如图：
+
+![](https://user-gold-cdn.xitu.io/2019/8/27/16cd0dd929ccf3e8?w=266&h=186&f=png&s=10622)
+
+```
+ <el-submenu index="1" popper-class="langItem">
+    <template slot="title">
+        <img :src="langLogo" class='langAvatar' alt="">
+    </template>
+    <el-menu-item index="1-1" @click="changeLocale('zh')">
+        <img :src="chinaImg" class='langAvatar' alt="">
+        <span class="intro">中文</span>
+    </el-menu-item>
+    <el-menu-item index="1-2" @click="changeLocale('en')">
+        <img :src="americaImg" class='langAvatar' alt="">
+        <span class="intro">EngList</span>
+    </el-menu-item>
+</el-submenu>
+```
+
+```
+ // 切换语言
+changeLocale(type){
+    setToken('lang',type);
+    this.$i18n.locale = type;
+    if(type === 'en'){
+        this.langLogo = this.americaImg;
+    }else{
+        this.langLogo = this.chinaImg;
+    }
+    setToken('langLogo',this.langLogo);
+}
+```
+
+# 基于cli3.0的vue项目的性能优化
+详细性能优化配置，请参考：[vue.config.js](https://github.com/wdlhao/vue2-element-touzi-admin/blob/dev-permission/vue.config.js)
+
+vue-cli 3.0 build包太大导致首屏加载过长，严重的影响了用户体验。因此，我们需要从以下方面提供相应的解决方案。
+
+## 1.productionSourceMap：false
+
+可以使得打包过后的文件不包含未压缩的.map文件，减少压缩后代码体积。
+
+## 2.项目中引入图片压缩（图片在线免费压缩网站 https://www.yasuotu.com/）或者将图片放到cdn上面进行引用。
+
+## 3.路由懒加载
+
+原因:“懒加载也叫延迟加载，即在需要的时候进行加载，随用随载。在单页应用中，如果没有应用懒加载，运用webpack打包后的文件将会异常的大，造成进入首页时，需要加载的内容过多，延时过长，不利于用户体验，而运用懒加载则可以将页面进行划分，需要的时候加载页面，可以有效的分担首页所承担的加载压力，减少首页加载用时。”
+
+### 方法一：resolve
+
+vue-router配置路由 , 使用vue的异步组件技术 , 可以实现按需加载 . 
+但是,这种情况下一个组件生成一个js文件
+
+代码如下：
+```
+{
+  path: '/login',
+  name: 'login',
+  component:function(resolve){
+     require(['@/page/login.vue'],resolve)
+  }
+}
+```
+### 方法二：官网方法 import()
+
+代码如下：
+```
+{ 
+	path: '/login',
+	name: 'login',
+	component:() => import('@/page/login')
+}
+```
+### 方法三：webpack的require,ensure()
+
+这种情况下，多个路由指定相同的chunkName，会合并打包成一个js文件。
+
+代码如下：
+
+```
+  path: '/login',
+  name: 'login',
+  component: r => require.ensure([], () => r(require('@/page/login')), 'demo')
+```
+## 4. 服务器开启Gzip(compression-webpack-plugin)
+
+```
+const CompressionPlugin = require("compression-webpack-plugin"); // gzip压缩,优化http请求,提高加载速度
+
+configureWebpack:config => {
+    // 为生产环境修改配置...
+    if (process.env.NODE_ENV === 'production') {
+         // 开启gzip压缩
+        config.plugins.push(new CompressionPlugin({
+            algorithm: 'gzip',
+            test: new RegExp("\\.(" + ["js", "css"].join("|") + ")$"), // 匹配文件扩展名
+            // threshold: 10240, // 对超过10k的数据进行压缩
+            threshold: 5120, // 对超过5k的数据进行压缩
+            minRatio: 0.8, 
+            cache: true, // 是否需要缓存
+            deleteOriginalAssets:false  // true删除源文件(不建议);false不删除源文件
+        }))
+    }
+}
+```
+注意：使用compression-webpack-plugin开启服务器Gzip,所以也需要在服务端进行配置，以便能够解析gzip文件；nginx端配置如下：
+
+```
+    gzip  on;
+    gzip_comp_level 4;
+    gzip_buffers  4 16k;   
+    gzip_types text/plain  text/css application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript; 
+    gzip_min_length 1k;
+    gzip_http_version 1.1;
+```
+## 5. 生成环境剔除debuger和console(TerserPlugin/UglifyJsPlugin)
+```
+const TerserPlugin = require('terser-webpack-plugin')  
+
+configureWebpack:config => {
+    // 为生产环境修改配置...
+    if (process.env.NODE_ENV === 'production') {
+      // 去除console来减少文件大小，效果同'UglifyJsPlugin'
+      new TerserPlugin({
+        cache: true,
+        parallel: true,
+        sourceMap: true, // Must be set to true if using source-maps in production
+        terserOptions: {
+          compress: {
+            warnings: false,
+            drop_console: true,
+            drop_debugger: true,
+            pure_funcs: ['console.log']
+          }
+        }
+      })
+    }
+}
+```
+## 6. 启用CDN加速(configureWebpack,config.externals)
+
+背景：在Vue项目中，引入到工程中的所有js、css文件，编译时都会被打包进vendor.js，浏览器在加载该文件之后才能开始显示首屏。若是引入的库众多，那么vendor.js文件体积将会相当的大，影响首开的体验。
+
+解决方法：将引用的外部js、css文件剥离开来，不编译到vendor.js中，而是用资源的形式引用，这样浏览器可以使用多个线程异步将vendor.js、外部的js等加载下来，达到加速首开的目的。
+
+外部的库文件，可以使用CDN资源，或者别的服务器资源等。
+ 
+步骤：
+### (1).配置要忽略的生产环境下被打包的文件
+```
+// 忽略生产环境打包的文件
+config.externals = {
+    "vue": "Vue",
+    "vue-router": "VueRouter",
+    "vuex": "Vuex",
+    "vue-i18n": "VueI18n",
+    "axios": "axios",
+    'element-ui': 'ELEMENT',
+    'echarts':'echarts',
+    'mockjs':'Mock',
+    'nprogress':'NProgress',
+    'js-cookie':'Cookies'
+}
+```
+### (2).定义不同环境下的cdn数据
+
+具体cdn数据,请参考：https://www.bootcdn.cn/
+```
+const cdn = {
+  // 开发环境
+  dev: {
+      css: [],
+      js: []
+  },
+  // 生产环境
+  build: {
+      css: [
+        'https://cdn.bootcss.com/element-ui/2.11.1/theme-chalk/index.css',
+        'https://cdn.bootcss.com/nprogress/0.2.0/nprogress.min.css'
+      ],
+      js: [
+        'https://cdn.bootcss.com/vue/2.6.10/vue.min.js',
+        'https://cdn.bootcss.com/vue-router/3.1.2/vue-router.min.js',
+        'https://cdn.bootcss.com/vuex/2.3.1/vuex.min.js',
+        'https://cdn.bootcss.com/axios/0.19.0/axios.min.js',
+        'https://cdn.bootcss.com/vue-i18n/8.13.0/vue-i18n.min.js',
+        'https://cdn.bootcss.com/element-ui/2.11.1/index.js',
+        'https://cdn.bootcss.com/echarts/3.8.5/echarts.min.js',
+        'https://cdn.bootcss.com/Mock.js/1.0.1-beta3/mock-min.js',
+        'https://cdn.bootcss.com/nprogress/0.2.0/nprogress.min.js',
+        'https://cdn.bootcss.com/js-cookie/2.2.0/js.cookie.min.js'
+      ]
+  }
+}
+```
+### (3).添加CDN参数到htmlWebpackPlugin配置中
+
+```
+config
+.plugin('html')
+.tap(args => {
+  if (process.env.NODE_ENV === 'production') {
+      args[0].cdn = cdn.build
+  }
+  if (process.env.NODE_ENV === 'development') {
+      args[0].cdn = cdn.dev
+  }
+  return args
+})
+```
+### (4).更改项目Router,Vuex,nprogress,mock,VueI18n等引入方式
+
+意思是只在开发环境引入相关的包，生产环境用cdn外链。
+
+```
+process.env.NODE_ENV === "development" ? Vue.use(Router) : null;// router/index.js
+
+process.env.NODE_ENV === "development" ? Vue.use(Vuex)  : null;// store/index.js
+
+process.env.NODE_ENV === "development" && import('nprogress/nprogress.css') // src/permission.js
+
+process.env.NODE_ENV === "development" ? Vue.use(Mock) : null;//mockjs/index.js
+
+process.env.NODE_ENV === "development" ? Vue.use(VueI18n) : null;//lang/index.js
+```
+效果如图：
+
+<div align="left">
+    <img width = "400" height = "300" src="https://user-gold-cdn.xitu.io/2019/8/27/16cd34a2cdb5fcc0?w=698&h=432&f=png&s=83880" />
+</div>
+
+注意：使用cdn外链，减少打包文件体积;更多适用于在生产环境，而在开发环境，我们还可以继续用以前的npm包。
+
+## 7.首屏加个loading小菊花动画;
+
+性能优化前后的数据对比：
+
+优化前：
+
+![](https://user-gold-cdn.xitu.io/2019/8/27/16cd393856c139ca?w=745&h=376&f=png&s=44348)
+
+优化后：
+
+![](https://user-gold-cdn.xitu.io/2019/8/27/16cd3962799663b8?w=751&h=379&f=png&s=50132)
+
+
+# nginx服务器部署
+
+项目开发完成后，我们将进行服务器的部署；部署分为：部署在跟目录和部署在子目录，这两种情况，前端publicPath配置也是不一样的，否则，服务器资源会显示404，无法加载。
+
+注意：本项目服务器为 windows系统，所以以下配置为windows系统配置；如果你是linux系统服务器，请参考linux服务器部署配置。
+
+准备工作：
+
+## 下载nginx服务器;
+
+下载网址：[请参考](http://nginx.org/en/download.html)；选择该稳定版本下载；下载完成后，将该文件上传到你的服务器目录并解压。如图：
+![](https://user-gold-cdn.xitu.io/2019/8/27/16cd363f3915f5f8?w=617&h=280&f=png&s=17035)
+
+运行npm run build.将打包后的项目文件dist,复制到你的服务器目录(**我的dist文件目标为:C:\ownprogram\vue\vue-touzi，我的nginx文件所在目标为：C:\ownprogram\nginx-1.8.1**)；接下来，开始对nginx-1.8.1/config/nginx.config文件进行配置。
+
+## 部署在跟目录
+
+本项目部署的跟目录为：C:\ownprogram\vue\vue-touzi\dist\，默认为80端口；
+vue.config.js中publicPath配置，如下：
+
+```
+module.exports = {
+  publicPath: process.env.NODE_ENV === "production" ? "./" : "/"
+}
+```
+nginx.config，如下：
+```
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    add_header Access-Control-Allow-Origin *;
+    add_header Access-Control-Allow-Headers X-Requested-With;
+    add_header Access-Control-Allow-Methods GET,POST,OPTIONS;
+    
+    gzip  on;
+    gzip_comp_level 4;
+    gzip_buffers  4 16k;   
+    gzip_types text/plain  text/css application/javascript application/x-javascript text/xml application/xml application/xml+rss text/javascript; 
+    gzip_min_length 1k;
+    gzip_http_version 1.1;
+
+    server {
+        listen       80;
+        server_name  localhost;
+        charset utf-8;
+
+        #access_log  logs/host.access.log  main;
+        
+        location / {
+            root  C:\ownprogram\vue\vue-touzi\dist\; 
+    	    index  index.html index.htm;
+    	    try_files $uri $uri/ /permission/index.html;
+     	    proxy_set_header Accept-Encoding 'gzip';
+       }
+
+ 	   location /permission {
+     	    alias C:\ownprogram\vue\vue-touzi\dist\permission;
+            index index.html;
+            try_files $uri $uri/ /permission/index.html;
+    	    proxy_set_header Accept-Encoding 'gzip';
+        }
+}
+
+```
+## 部署在子目录
+因为本项目C:\ownprogram\vue\vue-touzi\dist\默认为跟目录，属于dist/permission及为二级子目录；
+
+router/index.js配置，如下：
+```
+//注册路由
+export default new Router({
+	mode:'history', // 默认为'hash'模式
+	base: '/permission/', // 添加跟目录,对应服务器部署子目录
+	routes: constantRouterMap
+})
+
+```
+
+vue.config.js中publicPath配置，如下：
+
+```
+module.exports = {
+  publicPath: process.env.NODE_ENV === "production" ? "/permission/" : "/"
+}
+```
+nginx.config，新增location配置，如下：
+
+```
+ location /permission {
+    alias C:\ownprogram\vue\vue-touzi\dist\permission;
+    index index.html;
+    try_files $uri $uri/ /permission/index.html;
+    proxy_set_header Accept-Encoding 'gzip';
+}
+```
+
+配置完成后，保存文件；重启nginx即可进行正常访问；
+
+## nginx常用命令如下
+
+- 启动服务：start nginx
+- 配置文件修改重启服务：nginx -s reload
+- 快速停止或关闭Nginx：nginx -s stop
+- 正常停止或关闭Nginx：nginx -s quit
+- 查看Nginx的版本号：nginx -V
+- 查看windows任务管理器下Nginx的进程命令：tasklist /fi "imagename eq nginx.exe"
+
+# 项目说明
+
+小爱ADMIN是完全开源免费的管理系统集成方案，可以直接应用于相关后台管理系统模板；很多重点地方都做了详细的注释和解释。如果你也一样喜欢前端开发，欢迎加入我们的讨论/学习群，群内可以提问答疑，分享学习资料； 欢迎加入答疑qq群。
+
+# 技术答疑
+
+![](https://user-gold-cdn.xitu.io/2019/8/27/16cd3864672883d4?w=552&h=257&f=jpeg&s=91376)
+
+
+
+

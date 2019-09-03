@@ -1,0 +1,504 @@
+最近完成了我的小爱ADMIN后台管理系统基本功能,同时进行了页面整体布局和样式的全新改版。新增了系统权限功能的实现，同时觉得后台系统所有的菜单都左置，会限制菜单的扩展，因此我改进了三级菜单的显示。
+
+- [效果演示地址](http://www.jiouai.com/permission)
+- [github地址](https://github.com/wdlhao/vue2-element-touzi-admin/tree/dev-permission)
+
+# 项目demo展示
+![](https://img2018.cnblogs.com/blog/755150/201908/755150-20190825111036464-822661711.png)
+![](https://img2018.cnblogs.com/blog/755150/201908/755150-20190825111044907-1057517824.png)
+
+# 权限功能的实现
+权限路由思路：
+根据用户登录的roles信息与路由中配置的roles信息进行比较过滤，生成可以访问的路由表，并通过router.addRoutes(store.getters.addRouters)动态添加可访问权限路由表，从而实现左侧和顶栏菜单的展示。
+
+## 权限功能的实现步骤：
+
+### 1.给相应的菜单设置默认的roles信息
+在**router/index.js**中，给相应的菜单设置默认的roles信息;
+如下：
+
+给"权限设置"菜单设置的权限为：
+```
+{
+    path: '/permission',
+	name: 'permission',
+	meta: {
+      title: '权限设置',
+      roles: ['admin', 'editor'] //不同的角色都可以看到
+    }
+}
+```
+
+给其子菜单"页面权限",设置权限为：
+```
+{
+	path: 'page',
+	name: 'pagePer',
+    meta: {
+      title: '页面权限',
+      roles: ['admin'] //只有"admin"可以看到该菜单
+    },
+    component: () => import('@/page/permission/page'),
+}
+```
+
+
+给其子菜单"按钮权限"设置权限为：
+
+```
+{
+	path: 'directive',
+	name: 'directivePer',
+    meta: {
+	  title: '按钮权限',
+	  roles:['editor'] //只有"editor"可以看到该菜单
+    },
+    component: () => import('@/page/permission/directive'),
+}
+
+```
+### 2.通过router.beforeEach()进行路由过滤和权限拦截；
+
+代码如下:
+
+```
+function hasPermission(roles, permissionRoles) {
+  if (roles.indexOf('admin') >= 0) return true 
+  if (!permissionRoles) return true
+  return roles.some(role => permissionRoles.indexOf(role) >= 0)
+}
+const whiteList = ['/login'] // 不重定向白名单
+
+router.beforeEach((to, from, next) => {
+  NProgress.start()
+   // 设置浏览器头部标题
+   const browserHeaderTitle = to.meta.title
+   store.commit('SET_BROWSERHEADERTITLE', {
+     browserHeaderTitle: browserHeaderTitle
+   })
+  // 点击登录时，拿到了token并存入了cookie,保证页面刷新时,始终可以拿到token
+  if (getToken('Token')) {
+    if(to.path === '/login') {
+      next({ path: '/' })  
+      NProgress.done() 
+    } else {
+      // 用户登录成功之后，每次点击路由都进行了角色的判断;
+      if (store.getters.roles.length === 0) {
+        let token = getToken('Token');
+        getUserInfo({"token":token}).then().then(res => { // 根据token拉取用户信息
+          let userList = res.data.userList;
+          store.commit("SET_ROLES",userList.roles);
+          store.commit("SET_NAME",userList.name);
+          store.commit("SET_AVATAR",userList.avatar);
+          store.dispatch('GenerateRoutes', { "roles":userList.roles }).then(() => { // 根据roles权限生成可访问的路由表
+            router.addRoutes(store.getters.addRouters) // 动态添加可访问权限路由表
+            next({ ...to, replace: true }) // hack方法 确保addRoutes已完成
+          })
+        }).catch((err) => {
+          store.dispatch('LogOut').then(() => {
+            Message.error(err || 'Verification failed, please login again')
+            next({ path: '/' })
+          })
+        })
+      } else {
+        // 没有动态改变权限的需求可直接next() 删除下方权限判断 ↓
+        if (hasPermission(store.getters.roles, to.meta.roles)) {
+          next()//
+        } else {
+          next({ path: '/401', replace: true, query: { noGoBack: true }})
+        }
+      }
+    }
+  } else {
+    if (whiteList.indexOf(to.path) !== -1) {
+      // 点击退出时,会定位到这里
+      next()
+    } else {
+      next('/login')
+      NProgress.done()
+    }
+  }
+})
+
+router.afterEach(() => {
+  NProgress.done() // 结束Progress
+  setTimeout(() => {
+    const browserHeaderTitle = store.getters.browserHeaderTitle
+    setTitle(browserHeaderTitle)
+  }, 0)
+})
+```
+## 本系统权限逻辑分析
+  
+  1、路由对象区分权限路由对象和非权限路由对象；初始化时，将非权限路由对象赋值给Router;同时设置权限路由中的meta对象，如:meta:{roles:['admin','editor']},表示该roles所拥有的路由权限;
+  
+  2、通过用户登录成功之后返回的roles值，进行路由的匹配并生成新的路由对象;
+  
+  3、用户成功登录并跳转到首页时，根据刚刚生成的路由对象，渲染左侧的菜单;即，不同的用户看到的菜单是不一样的;
+  
+  
+  
+## 用户点击登录之后的业务逻辑分析
+1、用户点击登录按钮，通过路由导航钩子router.beforeEach()函数确定下一步的跳转逻辑,如下：
+  
+     1.1、用户已经登录成功过，并从cookie中拿到了token值;
+   
+     1.1.1、用户访问登录页面,直接定位到登录页面;
+     
+     1.1.1、用户访问非登录页面,需要根据用户是否有roles信息，进行不同的业务逻辑,如下：
+     
+        (1)、初始情况下,用户roles信息为空;
+        
+            1.通过getUserInfo()函数,根据token拉取用户信息;并通过store将该用户roles,name,avatar信息存储于vuex;
+            
+            2.通过store.dispatch('GenerateRoutes', { roles })去重新过滤和生成路由,通过router.addRoutes()合并路由表; 
+            
+            3.如果在获取用户信息接口时出现错误，则调取store.dispatch('LogOut')接口,返回到login页面;
+          
+        (2)、用户已经拥有roles信息；
+        
+            1.点击页面路由，通过roles权限判断 hasPermission()。如果用户有该路由权限，直接跳转对应的页面;如果没有权限，则跳转至401提示页面;
+  
+  2.用户点击退出,token已被清空
+  
+    1.如果设置了白名单用户，则直接跳转到相应的页面;
+    
+    2.反之,则跳转至登录页面;
+  
+    
+    
+
+详细代码，请参考[src/permission.js](https://github.com/wdlhao/vue2-element-touzi-admin/blob/dev-permission/src/permission.js)
+
+## 权限演示说明
+
+测试账号:
+
+（1）. username: admin，password: 123456；admin拥有最高权限，可以查看所有的页面和按钮；
+
+（2）. username: editor，password: 123456；editor只有被赋予权限的页面和按钮才可以看到；
+
+# 三级导航菜单顶部栏展示
+![](https://user-gold-cdn.xitu.io/2019/8/25/16cc6896919e9df2?w=629&h=332&f=png&s=50999)
+
+如图所示,在完成一般后台系统所具有的二级导航菜单功能之后,我发现其实很多的后台管理系统都有三级导航菜单,但是如果都把三级菜单放到左侧菜单做阶梯状排列，就会显得比较紧凑，因此我觉得把所有的三级菜单放到顶部是一个不错的选择。
+
+## 开发需求
+
+点击左侧菜单，找到其对应的菜单(顶栏菜单)排放于顶部导航栏;
+
+## 开发步骤
+
+### 1. 定义顶部导航组件topMenu.vue
+
+通过element-ui,NavMenu 导航菜单来进行顶部菜单的展示，注意顶栏和侧栏设置的区别；同时将其引用于头部组件headNav.vue中;
+
+### 2. 定义顶栏路由数据router/topRouter.js
+
+格式如下：
+```
+export const topRouterMap = [
+    {
+        'parentName':'infoShow',
+        'topmenulist':[
+            {
+                path: 'infoShow1',
+                name: 'infoShow1',
+                meta: {
+                    title: '个人信息子菜单1',
+                    icon: 'fa-asterisk',
+                    routerType: 'topmenu'
+                },
+                component: () => import('@/page/fundList/moneyData')
+            }
+        ]
+    },
+    {
+        'parentName':'chinaTabsList',
+        'topmenulist':[
+            {
+                path:'chinaTabsList1',
+                name:'chinaTabsList1',
+                meta:{
+                    title:'区域投资子菜单1',
+                    icon:'fa-asterisk',
+                    routerType:'topmenu'
+                },
+                component: () => import('@/page/fundList/moneyData')
+            }
+        ]
+    }
+]
+```
+定义topRouterMap为路由总数组；通过parentName来与左侧路由建立联系;通过topmenulist表示该顶栏路由的值；通过meta.routerType的值为"topmenu"或"leftmenu"来区分是顶栏路由，还是左侧路由；
+
+### 3. 准备headNav.vue中渲染数据
+
+思路：点击左侧菜单，需要显示顶部对应的菜单。因为左侧菜单要和顶部菜单建立联系。我们知道导航菜单在用户登录时，会根据用户的role信息进行权限过滤；那么，在过滤权限路由数据之前，我们可以通过addTopRouter()将所有的三级菜单进行过滤添加，添加完成之后，继续进行角色过滤，可以保证将不具备权限的顶部菜单也过滤掉。
+```
+// src/store/permission.js,通过循环过滤，生成新的二级菜单
+function addTopRouter(){
+  asyncRouterMap.forEach( (item) => {
+    if(item.children && item.children.length >= 1){
+      item.children.forEach((sitem) => {
+       topRouterMap.forEach((citem) => {
+          if(sitem.name === citem.parentName){
+              let newChildren = item.children.concat(citem.topmenulist);
+              item.children = newChildren;
+          }
+       })
+      })
+    }
+  })
+  return asyncRouterMap;
+}
+```
+### 4.点击左侧菜单过滤路由并显示对应数据
+
+在组件topMenu.vue中，用户默认进来或者点击左侧菜单，触发setLeftInnerMenu()函数，如下：
+```
+ setLeftInnerMenu(){
+    const titleList = this.$route.matched[1].meta.titleList;
+    const currentTitle = titleList && this.$route.matched[2].meta.title;
+    if( titleList && this.$route.matched[1].meta.routerType === 'leftmenu'){ // 点击的为 左侧的2级菜单
+        this.$store.dispatch('ClickLeftInnerMenu',{'titleList':titleList});
+        this.$store.dispatch('ClickTopMenu',{'title':currentTitle});
+    }else{ // 点击左侧1级菜单
+        this.$store.dispatch('ClickLeftInnerMenu',{'titleList':[]});
+        this.$store.dispatch('ClickTopMenu',{'title':''});
+    }
+}
+```
+通过当前路由this.$route.meta.routerType的值判断，用户是点击顶部菜单还是左侧菜单。如果点击顶部菜单，通过this.$store触发异步动作'ClickLeftInnerMenu'并传递参数'name',vuex中通过state.topRouters = filterTopRouters(state.routers,data)过滤当前路由信息；代码如下：
+```
+// src/store/permission.js,获取到当前路由对应顶部子菜单
+ function filterTopRouters(data){
+    let topRouters = topRouterMap.find((item)=>{
+       return item.parentName === data.name
+    })
+    if(!mutils.isEmpty(topRouters)){
+       return topRouters.topmenulist;
+    }
+}
+```
+topMenu.vue中，通过 computed:{ ...mapGetters(['topRouters'])}进行对应顶部路由数据的展示。用户每次点击左侧菜单时，顶部路由都进行了重新赋值并渲染，保证了数据的准确性。
+
+### 5.顶部菜单完善
+
+当顶部菜单的数据量过大时，我们需要设置横向滚动条并设置滚动条的样式。
+如图：
+![](https://user-gold-cdn.xitu.io/2019/6/17/16b65fe112a0df80?w=730&h=67&f=png&s=4029)
+
+# mock数据
+
+## 使用背景
+
+在使用easy-mock模拟数据的过程中，发现其对表格固定数据不能实现增删改等功能,并且由于它们是免费提供服务，导致用户量较大时，服务器经常无法访问，因而选择了使用mockjs进行本地数据模拟。
+
+## 介绍及功能
+
+[Mock.js](https://github.com/nuysoft/Mock/wiki/Getting-Started)是一款模拟数据生成器，旨在帮助前端攻城师独立于后端进行开发，帮助编写单元测试。提供了以下模拟功能：
+
+1.根据数据模板生成模拟数据，通过mockjs提供的方法,你可以轻松地创造大量随机的文本,数字,布尔值,日期,邮箱,链接,图片,颜色等.
+
+2.模拟 Ajax 请求，生成并返回模拟数据，mockjs可以进行强大的ajax拦截.能判断请求类型,获取到url,请求参数等.然后可以返回mock的假数据,或者你自己编好的json文件.功能强大易上手.
+
+3.基于 HTML 模板生成模拟数据 
+
+## mockjs在本项目中使用
+
+### 1. 安装mockjs
+```
+npm install mockjs --save-dev
+```
+
+### 2.创建mock文件夹结构并定义相关的功能模块
+
+如图：
+<div style="overflow:hidden;">
+<img src="https://user-gold-cdn.xitu.io/2019/6/18/16b69fee5ea05120?w=322&h=119&f=png&s=2926" alt="" style="float:left;">
+</div>
+mockjs/index.js，负责定义相关的mock接口，如下：
+
+```
+import Mock from 'mockjs'
+
+import tableAPI from './money'
+
+// 设置全局延时 没有延时的话有时候会检测不到数据变化 建议保留
+Mock.setup({
+    timeout: '300-600'
+})
+
+// 资金相关
+Mock.mock(/\/money\/get/, 'get', tableAPI.getMoneyList)
+Mock.mock(/\/money\/remove/, 'get', tableAPI.deleteMoney)
+Mock.mock(/\/money\/batchremove/, 'get', tableAPI.batchremoveMoney)
+Mock.mock(/\/money\/add/, 'get', tableAPI.createMoney)
+Mock.mock(/\/money\/edit/, 'get', tableAPI.updateMoney)
+```
+[mockjs/money.js](https://github.com/wdlhao/vue2-element-touzi-admin/blob/dev-permission/src/mockjs/money.js)，则定义相关的函数，实现模拟数据的业务逻辑，比如资金流水数据的增删改查等；数据的生成规则请参照[mockjs官网文档](https://github.com/nuysoft/Mock/wiki/Getting-Started)，上面有详细的语法说明；
+
+### 3.在main.js中引入定义好的mockjs
+如下：
+```
+import './mockjs'  //引用mock
+```
+### 4.mockjs,api接口封装
+
+src/api/money.js中，进行了统一的接口封装，在页面中调用对应函数，即可获取到相应的模拟数据。代码如下：
+```
+import request from '@/utils/axios'
+
+export function getMoneyIncomePay(params) {
+  return request({
+    url: '/money/get',
+    method: 'get',
+    params: params
+  })
+}
+
+export function addMoney(params) {
+  return request({
+    url: '/money/add',
+    method: 'get',
+    params: params
+  })
+}
+```
+### 5.组件中，接口调用，获取数据，渲染页面
+
+# vue-cli3.0 升级记录
+由于项目早期使用vue-cli2.0构建项目，需要进行繁琐的webpack配置；vue-cli 3.0集成了webpack配置并在性能提升上做了很大优化。因为本项目使用vue-cli3.0进行构建和升级。现将相关注意事项总结如下，详细文档，请参考[官网介绍](https://cli.vuejs.org/zh/guide/)。
+
+## 1.vue-cli3.0使用前提介绍
+Vue CLI 的包名称由 vue-cli 改成了 @vue/cli。
+如果你已经全局安装了旧版本的 vue-cli (1.x 或 2.x)，你需要先通过
+```
+npm uninstall vue-cli -g 或 yarn global remove vue-cli
+```
+ 卸载它。
+Vue CLI 需要 Node.js 8.9 或更高版本 (推荐 8.11.0+)。你可以使用 nvm 或 nvm-windows 在同一台电脑中管理多个 Node 版本。
+
+## 2.vue-cli3.0安装及使用
+
+### 1.vue-cli3.x安装
+
+```
+npm install -g @vue/cli
+# OR
+yarn global add @vue/cli
+```
+如果希望还保留 vue-cli2.x 的语法或使用 2.x 的模板，建议安装 cli-init
+
+```
+npm install -g @vue/cli-init
+# OR
+yarn global add @vue/cli-init
+```
+### 2.使用 vue-cli3.x 创建项目
+`
+vue create 项目名称；
+`
+安装步骤选取相关的配置信息即可，直到完成。
+
+### 3.新项目需要进行环境变量和模式配置
+
+在根目录下新建文件.env.development和.env.production，分别表示开发环境和生成环境配置；主要用于定义环境变量，并通过npm run serve或npm run  build集成到不同的环境中，供接口调用。代码如下：
+
+.env.development
+```
+NODE_ENV = development
+VUE_APP_URL = "https://easy-mock.com/mock/5cd03667adb0973be6a3d8d1/api"
+```
+.env.production
+
+```
+NODE_ENV = production
+VUE_APP_URL = "https://easy-mock.com/mock/5cd03667adb0973be6a3d8d1/api"
+```
+使用方法，如本项目中，配置在utils/env.js中，代码如下：
+```
+// development和production环境是不同的
+let app_url = process.env.VUE_APP_URL  
+export default {
+    app_url
+}
+```
+
+### 4.使用vue.config.js编译打包详细配置
+由于使用vue-cli3.x生成项目，webpack相关配置已经集成到node_module中，如果希望对 webpack 等进行细致化配置，需要在项目根目录下新建文件vue.config.js，具体配置可[参考文档](https://cli.vuejs.org/zh/guide)，下面是一份基本配置。
+```
+const TerserPlugin = require('terser-webpack-plugin')  // 用于在生成环境剔除debuger和console
+const path = require('path');
+const resolve = dir => {
+  return path.join(__dirname, dir);
+};
+
+const env = process.env.NODE_ENV
+let target = process.env.VUE_APP_URL  // development和production环境是不同的
+
+module.exports = {
+  publicPath: '/',
+  outputDir: './dist',
+  lintOnSave: false, // 关闭eslint
+  // 打包时不生成.map文件
+  productionSourceMap: false,
+  devServer: {
+    open: true,
+    host: '0.0.0.0',
+    port: 8808
+    // 由于本项目数据通过easy-mock和mockjs模拟，不存在跨域问题，无需配置代理;
+    // proxy: { 
+    //   '/v2': {
+    //       target: target,
+    //       changeOrigin: true
+    //   }
+    // }
+  },
+   // webpack相关配置
+  chainWebpack: (config) => {
+    config.entry.app = ['./src/main.js'];
+    config.resolve.alias
+      .set('@', resolve('src'))
+      .set('cps', resolve('src/components'))
+  },
+  configureWebpack:config => {
+    // 为生产环境修改配置...
+    if (process.env.NODE_ENV === 'production') {
+      new TerserPlugin({
+        cache: true,
+        parallel: true,
+        sourceMap: true, // Must be set to true if using source-maps in production
+        terserOptions: {
+          compress: {
+            drop_console: true,
+            drop_debugger: true
+          }
+        }
+      })
+    } else {
+      // 为开发环境修改配置...
+
+    }
+  },
+   // 第三方插件配置
+  pluginOptions: {
+
+  }
+}
+
+```
+项目配置完成好，安装好所有的依赖包。执行开发环境打包命令：npm run serve,即可运行项目；执行生成环境打包命令：npm run build,即可生成生产环境文件。
+
+# 结尾
+项目开发至此，一些基本的功能都已经完成，基本上能够满足项目需要。下篇文章会继续介绍"**项目分享功能的实现细节**"、"**项目部署细节及注意事项(包括如何部署子目录)**"、"**项目性能优化细节**"，希望大家敬请期待~
+
+# 技术答疑
+项目说明：
+
+小爱ADMIN是完全开源免费的管理系统集成方案，可以直接应用于相关后台管理系统模板；很多重点地方都做了详细的注释和解释。如果你也一样喜欢前端开发，欢迎加入我们的讨论/学习群，群内可以提问答疑，分享学习资料；
+欢迎加入答疑qq群。
+
+![](https://user-gold-cdn.xitu.io/2019/8/25/16cc68a1cae17e71?w=552&h=257&f=jpeg&s=91376)
+
